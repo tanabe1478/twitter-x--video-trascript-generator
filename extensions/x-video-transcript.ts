@@ -6,9 +6,9 @@ import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-a
 import { Type } from "typebox";
 
 const PACKAGE_ROOT = fileURLToPath(new URL("..", import.meta.url));
-const DEFAULT_REFINE_MODEL = "opencode-go/grok-4.6";
-const DEFAULT_FALLBACK_MODEL = "opencode-go/qwen3.8-max";
-const DEFAULT_TRANSLATE_MODEL = "opencode-go/gpt-5.6-luna";
+const DEFAULT_REFINE_MODEL = "google-vertex/gemini-2.5-pro";
+const DEFAULT_FALLBACK_MODEL = "google-vertex/gemini-2.5-flash";
+const DEFAULT_TRANSLATE_MODEL = "google-vertex/gemini-2.5-flash";
 const DEFAULT_WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo";
 const MODEL_TIMEOUT_MS = 20 * 60 * 1000;
 const LOCAL_TIMEOUT_MS = 60 * 60 * 1000;
@@ -300,11 +300,11 @@ const ToolParameters = Type.Object({
 		Type.String({ description: "Exact output directory; relative paths use the current working directory" }),
 	),
 	refineModel: Type.Optional(
-		Type.String({ description: "Pi model selector, for example opencode-go/grok-4.6" }),
+		Type.String({ description: "Pi model selector, for example google-vertex/gemini-2.5-pro" }),
 	),
 	fallbackRefineModel: Type.Optional(Type.String()),
 	translationModel: Type.Optional(
-		Type.String({ description: "Pi model selector, for example opencode-go/gpt-5.6-luna" }),
+		Type.String({ description: "Pi model selector, for example google-vertex/gemini-2.5-flash" }),
 	),
 	force: Type.Optional(Type.Boolean({ description: "Regenerate existing local files" })),
 });

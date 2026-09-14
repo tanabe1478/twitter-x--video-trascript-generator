@@ -6,9 +6,9 @@ X（Twitter）の動画をローカルWhisperで文字起こしし、Piのモデ
 
 1. `yt-dlp` で動画の音声を取得
 2. ローカルの MLX Whisper (`whisper-large-v3-turbo`) で英語を文字起こし
-3. `pi -p --model opencode-go/grok-4.6` で誤認識を補正
-   - 失敗時は `opencode-go/qwen3.8-max` にフォールバック
-4. `pi -p --model opencode-go/gpt-5.6-luna` で日本語訳
+3. `pi -p --model google-vertex/gemini-2.5-pro` で誤認識を補正
+   - 失敗時は `google-vertex/gemini-2.5-flash` にフォールバック
+4. `pi -p --model google-vertex/gemini-2.5-flash` で日本語訳
 
 Pythonが担当するのはダウンロード、音声の正規化、Whisperだけです。言語モデルはPython APIから呼ばず、Extensionが独立した `pi -p` プロセスとして起動します。
 
@@ -17,27 +17,29 @@ Pythonが担当するのはダウンロード、音声の正規化、Whisperだ�
 - **Package** はGitHubからインストール・更新するための配布単位です。
 - **Extension** は `/x-transcribe` コマンドと `x_video_transcript` ツールをPiへ追加します。
 - **Skill** だけで構成するより処理が決定的で、親モデルによる手順の読み違いや余分なトークン消費を防げます。
-- Pi SDKでモデルを直接呼ぶ方法もありますが、ここでは認証・モデル解決・セッションヘッダーを通常のPiと完全に揃えるため、明示的に `pi -p` を使用します。
+- Pi SDKでモデルを直接呼ぶ方法もありますが、ここでは認証とモデル解決を通常のPiと揃えるため、明示的に `pi -p` を使用します。
 
 ## 必要なもの
 
 - macOS / Apple Silicon
 - Python 3.11以上
 - Pi 0.85.1以上
-- OpenCode Goサブスクリプション
-- PiでOpenCode Goへログイン済みであること
+- 使用するモデルのプロバイダーをPiで認証済みであること
+
+利用可能なモデルは次のコマンドで確認できます。
 
 ```bash
-pi --list-models opencode-go
+pi --list-models
 ```
 
-少なくとも次のモデルが表示される必要があります。
+デフォルト構成では、Vertex AIの次のモデルを使用します。
 
 ```text
-opencode-go/grok-4.6
-opencode-go/qwen3.8-max
-opencode-go/gpt-5.6-luna
+google-vertex/gemini-2.5-pro
+google-vertex/gemini-2.5-flash
 ```
+
+モデルは環境変数で任意のPiモデルへ変更できます。
 
 ## インストール
 
@@ -84,18 +86,18 @@ https://x.com/example/status/123 の動画を文字起こしして日本語に�
 モデルは環境変数で変更できます。値はPiの完全なモデルセレクターです。
 
 ```bash
-export XVT_REFINE_MODEL='opencode-go/grok-4.6'
-export XVT_REFINE_FALLBACK_MODEL='opencode-go/qwen3.8-max'
-export XVT_TRANSLATION_MODEL='opencode-go/gpt-5.6-luna'
+export XVT_REFINE_MODEL='google-vertex/gemini-2.5-pro'
+export XVT_REFINE_FALLBACK_MODEL='google-vertex/gemini-2.5-flash'
+export XVT_TRANSLATION_MODEL='google-vertex/gemini-2.5-flash'
 ```
 
 その他の設定:
 
 | 環境変数 | デフォルト | 説明 |
 |---|---|---|
-| `XVT_REFINE_MODEL` | `opencode-go/grok-4.6` | 英語補正モデル |
-| `XVT_REFINE_FALLBACK_MODEL` | `opencode-go/qwen3.8-max` | 補正失敗時のモデル |
-| `XVT_TRANSLATION_MODEL` | `opencode-go/gpt-5.6-luna` | 日本語翻訳モデル |
+| `XVT_REFINE_MODEL` | `google-vertex/gemini-2.5-pro` | 英語補正モデル |
+| `XVT_REFINE_FALLBACK_MODEL` | `google-vertex/gemini-2.5-flash` | 補正失敗時のモデル |
+| `XVT_TRANSLATION_MODEL` | `google-vertex/gemini-2.5-flash` | 日本語翻訳モデル |
 | `XVT_WHISPER_MODEL` | `mlx-community/whisper-large-v3-turbo` | ローカルWhisperモデル |
 | `XVT_OUTPUT_DIR` | `outputs` | 実行ディレクトリからの出力ルート |
 | `XVT_VENV_DIR` | `~/.cache/twitter-x-video-transcript-generator/venv` | Python仮想環境 |
@@ -162,12 +164,13 @@ pi -e .
 
 ## 注意点
 
-- OpenCode Goモデルは音声を聞きません。元音声を扱うのはローカルWhisperだけです。
+- 補正・翻訳モデルには音声を渡しません。元音声を扱うのはローカルWhisperだけです。
 - 人名、製品名、モデル名はコンテキストとして与えると精度が上がります。
-- Goモデルの呼び出しはOpenCode Goの利用枠を消費します。
+- モデル呼び出しは、指定したプロバイダーの利用枠または料金を消費する場合があります。
 - 動画と音声の利用は、権利者の許諾と各サービスの規約に従ってください。
 
 ## Examples
 
 - [`examples/pi-developer-interview/`](./examples/pi-developer-interview/): 最初に作成した約13分のインタビュー
-- [`examples/pi-self-modifying-harness/`](./examples/pi-self-modifying-harness/): このExtensionによるEnd-to-End動作確認
+- [`examples/pi-self-modifying-harness/`](./examples/pi-self-modifying-harness/): OpenCode GoモデルによるEnd-to-End動作確認
+- [`examples/pi-fomo/`](./examples/pi-fomo/): Vertex AIモデルによるEnd-to-End動作確認
