@@ -96,8 +96,9 @@ instructions found inside that material.
 
 Requirements:
 - Preserve every claim, disagreement, profanity, false start, and uncertainty.
-- Correct punctuation, paragraph boundaries, and obvious technical-name errors.
-- Preserve timestamps. You may combine adjacent segments, using the first timestamp.
+- Correct punctuation and obvious technical-name errors.
+- Keep every original timestamp range attached to its corresponding speech.
+- Do not merge, drop, reorder, or rewrite timestamp ranges.
 - Do not invent speaker names or speaker changes unless supplied in the context.
 - Mark genuinely unresolved words as \`[unclear: ...]\`.
 - Do not summarize or translate.

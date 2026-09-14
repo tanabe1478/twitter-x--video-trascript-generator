@@ -1,6 +1,6 @@
 {
   "name": "twitter-x-video-transcript-generator",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "Pi extension for transcribing and translating X/Twitter videos",

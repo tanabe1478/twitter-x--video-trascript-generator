@@ -71,6 +71,8 @@ URLだけを指定することもできます。
 /x-transcribe https://x.com/pidotdev/status/2099045420496486415
 ```
 
+指定した投稿に動画がなく、動画投稿への返信だった場合は、親投稿を最大5件まで自動的に追跡します。`metadata.json` の `requested_url` と `resolved_url` で確認できます。
+
 引数なしで `/x-transcribe` を実行すると、URLと補足情報の入力ダイアログが表示されます。
 
 ### 通常の会話から利用
@@ -174,3 +176,4 @@ pi -e .
 - [`examples/pi-developer-interview/`](./examples/pi-developer-interview/): 最初に作成した約13分のインタビュー
 - [`examples/pi-self-modifying-harness/`](./examples/pi-self-modifying-harness/): OpenCode GoモデルによるEnd-to-End動作確認
 - [`examples/pi-fomo/`](./examples/pi-fomo/): Vertex AIモデルによるEnd-to-End動作確認
+- [`examples/pi-memory/`](./examples/pi-memory/): 動画投稿への返信URLを自動解決した例

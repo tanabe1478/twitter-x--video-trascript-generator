@@ -32,6 +32,40 @@ def find_source(output_dir: Path) -> Path | None:
     return sorted(candidates)[0] if candidates else None
 
 
+def extract_with_reply_fallback(
+    ydl: Any, url: str, max_parents: int = 5
+) -> tuple[dict[str, Any], str]:
+    import yt_dlp
+    from yt_dlp.extractor.twitter import TwitterIE
+
+    current_url = url
+    visited: set[str] = set()
+    for _ in range(max_parents + 1):
+        try:
+            return ydl.extract_info(current_url, download=True), current_url
+        except yt_dlp.utils.DownloadError as error:
+            if "No video could be found in this tweet" not in str(error):
+                raise
+
+            tweet_id = output_name(current_url)
+            if tweet_id == "transcript" or tweet_id in visited:
+                raise
+            visited.add(tweet_id)
+
+            status = TwitterIE(ydl)._extract_status(tweet_id)
+            parent_id = status.get("in_reply_to_status_id_str")
+            if not parent_id:
+                raise
+            parent_user = status.get("in_reply_to_screen_name") or "i"
+            current_url = f"https://x.com/{parent_user}/status/{parent_id}"
+            print(
+                f"No attached video; trying parent post: {current_url}",
+                flush=True,
+            )
+
+    raise RuntimeError(f"No video found after following {max_parents} parent posts")
+
+
 def download(url: str, output_dir: Path, verbose: bool) -> tuple[Path, dict[str, Any]]:
     import yt_dlp
 
@@ -43,7 +77,7 @@ def download(url: str, output_dir: Path, verbose: bool) -> tuple[Path, dict[str,
         "no_warnings": not verbose,
     }
     with yt_dlp.YoutubeDL(options) as ydl:
-        info = ydl.extract_info(url, download=True)
+        info, resolved_url = extract_with_reply_fallback(ydl, url)
 
     source = find_source(output_dir)
     if source is None:
@@ -56,7 +90,9 @@ def download(url: str, output_dir: Path, verbose: bool) -> tuple[Path, dict[str,
         "uploader": info.get("uploader"),
         "duration": info.get("duration"),
         "upload_date": info.get("upload_date"),
-        "webpage_url": info.get("webpage_url") or url,
+        "requested_url": url,
+        "resolved_url": resolved_url,
+        "webpage_url": info.get("webpage_url") or resolved_url,
     }
     return source, metadata
 
