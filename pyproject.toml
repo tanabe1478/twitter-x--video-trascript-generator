@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "twitter-x-video-transcript-generator"
-version = "0.1.0"
+version = "0.2.0"
 description = "Generate and translate transcripts from X/Twitter videos"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -15,7 +15,7 @@ dependencies = [
 ]
 
 [project.scripts]
-x-video-transcript = "x_video_transcript.cli:main"
+x-video-transcript-local = "x_video_transcript.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/x_video_transcript"]

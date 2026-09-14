@@ -1,0 +1,31 @@
+{
+  "name": "twitter-x-video-transcript-generator",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Pi extension for transcribing and translating X/Twitter videos",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "transcription",
+    "whisper"
+  ],
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "python3 -m unittest discover -s tests -v"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0"
+  }
+}

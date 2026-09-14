@@ -1,6 +1,6 @@
 import unittest
 
-from x_video_transcript.cli import output_name, render_whisper, strip_code_fence
+from x_video_transcript.cli import output_name, render_whisper
 
 
 class CliHelpersTest(unittest.TestCase):
@@ -18,12 +18,6 @@ class CliHelpersTest(unittest.TestCase):
             ]
         }
         self.assertEqual(render_whisper(result), "[00:01-01:05] hello\n")
-
-    def test_strip_markdown_fence(self):
-        self.assertEqual(
-            strip_code_fence("```markdown\n[00:01] Hello\n```"),
-            "[00:01] Hello\n",
-        )
 
 
 if __name__ == "__main__":

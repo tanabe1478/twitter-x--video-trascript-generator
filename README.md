@@ -1,26 +1,31 @@
 # Twitter/X Video Transcript Generator
 
-X（Twitter）の動画をダウンロードし、英語文字起こしの補正と日本語訳を生成します。
+X（Twitter）の動画をローカルWhisperで文字起こしし、Piのモデルで英語補正と日本語訳を生成する **Pi Package / Extension** です。
 
 ## パイプライン
 
 1. `yt-dlp` で動画の音声を取得
 2. ローカルの MLX Whisper (`whisper-large-v3-turbo`) で英語を文字起こし
-3. OpenCode Go の `grok-4.6` で文脈上明らかな誤認識を補正
-   - APIエラー時は `qwen3.8-max` にフォールバック
-4. OpenCode Go の `gpt-5.6-luna` で日本語訳
+3. `pi -p --model opencode-go/grok-4.6` で誤認識を補正
+   - 失敗時は `opencode-go/qwen3.8-max` にフォールバック
+4. `pi -p --model opencode-go/gpt-5.6-luna` で日本語訳
 
-Whisper以外のモデルには音声を渡しません。OpenCode GoモデルはWhisperの下書きをテキストとして補正・翻訳します。
+Pythonが担当するのはダウンロード、音声の正規化、Whisperだけです。言語モデルはPython APIから呼ばず、Extensionが独立した `pi -p` プロセスとして起動します。
+
+## なぜPackage + Extensionなのか
+
+- **Package** はGitHubからインストール・更新するための配布単位です。
+- **Extension** は `/x-transcribe` コマンドと `x_video_transcript` ツールをPiへ追加します。
+- **Skill** だけで構成するより処理が決定的で、親モデルによる手順の読み違いや余分なトークン消費を防げます。
+- Pi SDKでモデルを直接呼ぶ方法もありますが、ここでは認証・モデル解決・セッションヘッダーを通常のPiと完全に揃えるため、明示的に `pi -p` を使用します。
 
 ## 必要なもの
 
 - macOS / Apple Silicon
 - Python 3.11以上
-- `pi` 0.85.1以上
+- Pi 0.85.1以上
 - OpenCode Goサブスクリプション
 - PiでOpenCode Goへログイン済みであること
-
-利用可能か確認します。
 
 ```bash
 pi --list-models opencode-go
@@ -34,25 +39,93 @@ opencode-go/qwen3.8-max
 opencode-go/gpt-5.6-luna
 ```
 
-## セットアップ
+## インストール
+
+GitHubからPi Packageとしてインストールします。
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -e .
+pi install https://github.com/tanabe1478/twitter-x--video-trascript-generator
 ```
 
-初回のWhisper実行時には、Hugging Faceからモデルがダウンロードされます。
+Piを起動または `/reload` した後、ローカルWhisper環境を一度だけセットアップします。
 
-## 実行
+```text
+/x-transcribe-setup
+```
+
+デフォルトでは `~/.cache/twitter-x-video-transcript-generator/venv` にPython仮想環境を作成します。初回のWhisper実行時にはHugging Faceからモデルがダウンロードされます。
+
+## 使用方法
+
+### Slash command
+
+```text
+/x-transcribe https://x.com/pidotdev/status/2099045420496486415 Interview with Mario Zechner and Armin Ronacher about Pi, Astra, coding agents, and slop.
+```
+
+URLだけを指定することもできます。
+
+```text
+/x-transcribe https://x.com/pidotdev/status/2099045420496486415
+```
+
+引数なしで `/x-transcribe` を実行すると、URLと補足情報の入力ダイアログが表示されます。
+
+### 通常の会話から利用
+
+Extensionは `x_video_transcript` ツールも登録します。そのためPiへ自然文で依頼できます。
+
+```text
+https://x.com/example/status/123 の動画を文字起こしして日本語に翻訳して
+```
+
+## モデル設定
+
+モデルは環境変数で変更できます。値はPiの完全なモデルセレクターです。
 
 ```bash
-x-video-transcript \
-  'https://x.com/pidotdev/status/2099045420496486415' \
-  --context 'Interview with Mario Zechner and Armin Ronacher about Pi, Astra, coding agents, and slop.'
+export XVT_REFINE_MODEL='opencode-go/grok-4.6'
+export XVT_REFINE_FALLBACK_MODEL='opencode-go/qwen3.8-max'
+export XVT_TRANSLATION_MODEL='opencode-go/gpt-5.6-luna'
 ```
 
-出力先はデフォルトで `outputs/<status-id>/` です。
+その他の設定:
+
+| 環境変数 | デフォルト | 説明 |
+|---|---|---|
+| `XVT_REFINE_MODEL` | `opencode-go/grok-4.6` | 英語補正モデル |
+| `XVT_REFINE_FALLBACK_MODEL` | `opencode-go/qwen3.8-max` | 補正失敗時のモデル |
+| `XVT_TRANSLATION_MODEL` | `opencode-go/gpt-5.6-luna` | 日本語翻訳モデル |
+| `XVT_WHISPER_MODEL` | `mlx-community/whisper-large-v3-turbo` | ローカルWhisperモデル |
+| `XVT_OUTPUT_DIR` | `outputs` | 実行ディレクトリからの出力ルート |
+| `XVT_VENV_DIR` | `~/.cache/twitter-x-video-transcript-generator/venv` | Python仮想環境 |
+| `XVT_PYTHON` | `python3` | セットアップに使うPython |
+| `XVT_LOCAL_TRANSCRIBER` | 仮想環境内のコマンド | ローカル処理コマンドの上書き |
+
+ツール呼び出しでは、環境変数を変えずリクエスト単位でモデルや出力先を上書きすることもできます。
+
+## `pi -p` の実行形
+
+Extension内部では、おおむね次の形で別Piプロセスを起動します。
+
+```bash
+pi \
+  --model "$XVT_REFINE_MODEL" \
+  --thinking high \
+  --no-tools \
+  --no-session \
+  --no-context-files \
+  --no-extensions \
+  --no-skills \
+  --print \
+  @outputs/STATUS_ID/refine-prompt.md
+```
+
+翻訳では `XVT_TRANSLATION_MODEL` と `--thinking low` を使用します。子プロセスではツールやExtensionを無効にし、再帰的な起動とプロンプトインジェクションの影響を抑えています。
+
+## 出力
+
+デフォルトでは、Piを起動したディレクトリの `outputs/<status-id>/` に保存します。
 
 ```text
 metadata.json             動画のメタデータ
@@ -66,44 +139,34 @@ translate-prompt.md       翻訳に使用したプロンプト
 transcript-ja.md          日本語訳
 ```
 
-## モデルの変更
-
-補正にQwenを直接使う場合:
+## ローカル開発
 
 ```bash
-x-video-transcript URL --refine-model qwen3.8-max
+npm install
+npm run check
+
+python3 -m venv .venv
+.venv/bin/pip install -e .
+.venv/bin/python -m unittest discover -s tests -v
+
+pi -e .
 ```
 
-別のGoモデルを使う場合:
+ローカルWhisperだけを直接実行する場合:
 
 ```bash
-x-video-transcript URL \
-  --refine-model grok-4.6 \
-  --fallback-refine-model qwen3.8-max \
-  --translation-model gpt-5.6-luna
-```
-
-## 再実行
-
-既存の中間結果は自動的に再利用します。全工程を再生成する場合:
-
-```bash
-x-video-transcript URL --force
-```
-
-Whisperだけを実行し、OpenCode Goの利用枠を消費しない場合:
-
-```bash
-x-video-transcript URL --skip-refine --skip-translate
+.venv/bin/x-video-transcript-local \
+  'https://x.com/example/status/123' \
+  --output-dir outputs/123
 ```
 
 ## 注意点
 
-- OpenCode Goモデルは音声を聞けないため、音響的に曖昧な箇所を完全には検証できません。
-- 人名、製品名、モデル名は `--context` で与えるとWhisperと補正モデルの精度が上がります。
-- `grok-4.6`、`qwen3.8-max`、`gpt-5.6-luna` の利用はOpenCode Goの利用枠を消費します。
-- 動画と音声のダウンロードおよび利用は、権利者の許諾と各サービスの規約に従ってください。
+- OpenCode Goモデルは音声を聞きません。元音声を扱うのはローカルWhisperだけです。
+- 人名、製品名、モデル名はコンテキストとして与えると精度が上がります。
+- Goモデルの呼び出しはOpenCode Goの利用枠を消費します。
+- 動画と音声の利用は、権利者の許諾と各サービスの規約に従ってください。
 
 ## Example
 
-最初に作成したPi開発者インタビューの文字起こしは [`examples/pi-developer-interview/`](./examples/pi-developer-interview/) にあります。
+Pi開発者インタビューの文字起こしは [`examples/pi-developer-interview/`](./examples/pi-developer-interview/) にあります。
