@@ -325,6 +325,7 @@ export default function (pi: ExtensionAPI) {
 				const executable = await setupPython(pi, ctx.signal);
 				ctx.ui.notify(`Installed: ${executable}`, "info");
 			} catch (error) {
+				if (!ctx.hasUI) throw error;
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 			} finally {
 				ctx.ui.setStatus("x-transcribe", undefined);
@@ -354,6 +355,7 @@ export default function (pi: ExtensionAPI) {
 				});
 				ctx.ui.notify(`Transcripts written to ${result.outputDir}`, "info");
 			} catch (error) {
+				if (!ctx.hasUI) throw error;
 				ctx.ui.notify(error instanceof Error ? error.message : String(error), "error");
 			} finally {
 				ctx.ui.setStatus("x-transcribe", undefined);

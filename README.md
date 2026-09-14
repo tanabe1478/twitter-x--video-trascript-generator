@@ -167,6 +167,7 @@ pi -e .
 - Goモデルの呼び出しはOpenCode Goの利用枠を消費します。
 - 動画と音声の利用は、権利者の許諾と各サービスの規約に従ってください。
 
-## Example
+## Examples
 
-Pi開発者インタビューの文字起こしは [`examples/pi-developer-interview/`](./examples/pi-developer-interview/) にあります。
+- [`examples/pi-developer-interview/`](./examples/pi-developer-interview/): 最初に作成した約13分のインタビュー
+- [`examples/pi-self-modifying-harness/`](./examples/pi-self-modifying-harness/): このExtensionによるEnd-to-End動作確認

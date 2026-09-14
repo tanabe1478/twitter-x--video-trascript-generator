@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -60,10 +61,27 @@ def download(url: str, output_dir: Path, verbose: bool) -> tuple[Path, dict[str,
     return source, metadata
 
 
-def normalize_audio(source: Path, destination: Path) -> None:
+def configure_ffmpeg() -> str:
     import imageio_ffmpeg
 
     ffmpeg = imageio_ffmpeg.get_ffmpeg_exe()
+    executable_dir = Path(sys.executable).parent
+    link = executable_dir / "ffmpeg"
+    if not link.exists():
+        try:
+            if link.is_symlink():
+                link.unlink()
+            link.symlink_to(ffmpeg)
+        except OSError as error:
+            raise RuntimeError(
+                f"Could not expose the bundled ffmpeg at {link}: {error}"
+            ) from error
+    os.environ["PATH"] = f"{executable_dir}{os.pathsep}{os.environ.get('PATH', '')}"
+    return ffmpeg
+
+
+def normalize_audio(source: Path, destination: Path) -> None:
+    ffmpeg = configure_ffmpeg()
     command = [
         ffmpeg,
         "-hide_banner",
@@ -105,6 +123,7 @@ def run_whisper(
     context: str | None,
     verbose: bool,
 ) -> dict[str, Any]:
+    configure_ffmpeg()
     import mlx_whisper
 
     return mlx_whisper.transcribe(
