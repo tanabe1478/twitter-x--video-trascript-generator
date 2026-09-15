@@ -8,6 +8,7 @@
     "pi-package",
     "pi-extension",
     "transcription",
+    "parakeet",
     "whisper"
   ],
   "scripts": {

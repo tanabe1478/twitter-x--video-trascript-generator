@@ -6,11 +6,14 @@ import os
 import re
 import subprocess
 import sys
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 
 DEFAULT_WHISPER_MODEL = "mlx-community/whisper-large-v3-turbo"
+DEFAULT_PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
+DEFAULT_TRANSCRIBER = "parakeet"
 
 
 def timestamp(seconds: float) -> str:
@@ -138,6 +141,34 @@ def normalize_audio(source: Path, destination: Path) -> None:
     subprocess.run(command, check=True)
 
 
+@dataclass
+class Segment:
+    start: float
+    end: float
+    text: str
+
+
+@dataclass
+class Transcript:
+    engine: str
+    model: str
+    segments: list[Segment]
+    raw: Any
+
+
+class Transcriber(Protocol):
+    name: str
+    model: str
+
+    def transcribe(
+        self,
+        audio: Path,
+        metadata: dict[str, Any],
+        context: str | None,
+        verbose: bool,
+    ) -> Transcript: ...
+
+
 def whisper_prompt(metadata: dict[str, Any], context: str | None) -> str:
     parts = [
         "Accurate verbatim transcript. Preserve technical terms, product names, "
@@ -152,32 +183,97 @@ def whisper_prompt(metadata: dict[str, Any], context: str | None) -> str:
     return "\n".join(parts)[:4000]
 
 
-def run_whisper(
-    audio: Path,
-    model: str,
-    metadata: dict[str, Any],
-    context: str | None,
-    verbose: bool,
-) -> dict[str, Any]:
-    configure_ffmpeg()
-    import mlx_whisper
+class WhisperTranscriber:
+    name = "whisper"
 
-    return mlx_whisper.transcribe(
-        str(audio),
-        path_or_hf_repo=model,
-        language="en",
-        verbose=verbose,
-        word_timestamps=True,
-        initial_prompt=whisper_prompt(metadata, context),
-    )
+    def __init__(self, model: str):
+        self.model = model
+
+    def transcribe(
+        self,
+        audio: Path,
+        metadata: dict[str, Any],
+        context: str | None,
+        verbose: bool,
+    ) -> Transcript:
+        configure_ffmpeg()
+        import mlx_whisper
+
+        result = mlx_whisper.transcribe(
+            str(audio),
+            path_or_hf_repo=self.model,
+            language="en",
+            verbose=verbose,
+            word_timestamps=True,
+            initial_prompt=whisper_prompt(metadata, context),
+        )
+        segments = [
+            Segment(float(segment["start"]), float(segment["end"]), str(segment["text"]))
+            for segment in result.get("segments", [])
+        ]
+        return Transcript(self.name, self.model, segments, result)
 
 
-def render_whisper(result: dict[str, Any]) -> str:
+class ParakeetTranscriber:
+    name = "parakeet"
+
+    def __init__(self, model: str):
+        self.model = model
+
+    def transcribe(
+        self,
+        audio: Path,
+        metadata: dict[str, Any],
+        context: str | None,
+        verbose: bool,
+    ) -> Transcript:
+        configure_ffmpeg()
+        from parakeet_mlx import from_pretrained
+
+        model = from_pretrained(self.model)
+        result = model.transcribe(str(audio))
+        sentences = [
+            {
+                "start": sentence.start,
+                "end": sentence.end,
+                "text": sentence.text,
+                "tokens": [
+                    {"start": token.start, "end": token.end, "text": token.text}
+                    for token in sentence.tokens
+                ],
+            }
+            for sentence in result.sentences
+        ]
+        segments = [
+            Segment(float(sentence.start), float(sentence.end), str(sentence.text))
+            for sentence in result.sentences
+        ]
+        return Transcript(
+            self.name,
+            self.model,
+            segments,
+            {"text": result.text, "sentences": sentences},
+        )
+
+
+def build_transcriber(
+    name: str,
+    whisper_model: str = DEFAULT_WHISPER_MODEL,
+    parakeet_model: str = DEFAULT_PARAKEET_MODEL,
+) -> Transcriber:
+    if name == "whisper":
+        return WhisperTranscriber(whisper_model)
+    if name == "parakeet":
+        return ParakeetTranscriber(parakeet_model)
+    raise ValueError(f"unknown transcriber: {name}")
+
+
+def render_transcript(transcript: Transcript) -> str:
     lines = []
-    for segment in result.get("segments", []):
-        start = timestamp(float(segment["start"]))
-        end = timestamp(float(segment["end"]))
-        text = str(segment["text"]).strip()
+    for segment in transcript.segments:
+        start = timestamp(segment.start)
+        end = timestamp(segment.end)
+        text = segment.text.strip()
         if text:
             lines.append(f"[{start}-{end}] {text}")
     return "\n".join(lines) + "\n"
@@ -192,7 +288,7 @@ def save_json(path: Path, value: Any) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Download an X/Twitter video and transcribe it with local MLX Whisper"
+        description="Download an X/Twitter video and transcribe it locally (Parakeet or Whisper)"
     )
     parser.add_argument("url", help="X/Twitter status URL containing a video")
     parser.add_argument(
@@ -204,7 +300,19 @@ def build_parser() -> argparse.ArgumentParser:
         "--context",
         help="Names, terminology, speaker hints, or other source context",
     )
+    parser.add_argument(
+        "--transcriber",
+        choices=["parakeet", "whisper"],
+        default=DEFAULT_TRANSCRIBER,
+        help="Local speech recognition engine",
+    )
+    parser.add_argument("--parakeet-model", default=DEFAULT_PARAKEET_MODEL)
     parser.add_argument("--whisper-model", default=DEFAULT_WHISPER_MODEL)
+    parser.add_argument(
+        "--no-fallback",
+        action="store_true",
+        help="Do not fall back to Whisper when the primary transcriber fails",
+    )
     parser.add_argument(
         "--force", action="store_true", help="Regenerate existing intermediate files"
     )
@@ -238,21 +346,55 @@ def main(argv: list[str] | None = None) -> int:
     else:
         print(f"[2/3] Reusing {normalized}", flush=True)
 
-    whisper_json = output_dir / "whisper.json"
-    whisper_md = output_dir / "transcript-whisper.md"
-    if args.force or not whisper_md.exists():
-        print(f"[3/3] Transcribing with {args.whisper_model}...", flush=True)
-        result = run_whisper(
-            normalized,
-            args.whisper_model,
-            metadata,
-            args.context,
-            args.verbose,
+    asr_json = output_dir / "asr.json"
+    draft_md = output_dir / "transcript-draft.md"
+    if args.force or not draft_md.exists():
+        transcriber = build_transcriber(
+            args.transcriber,
+            whisper_model=args.whisper_model,
+            parakeet_model=args.parakeet_model,
         )
-        save_json(whisper_json, result)
-        whisper_md.write_text(render_whisper(result), encoding="utf-8")
+        print(
+            f"[3/3] Transcribing with {transcriber.name} ({transcriber.model})...",
+            flush=True,
+        )
+        try:
+            transcript = transcriber.transcribe(
+                normalized,
+                metadata,
+                args.context,
+                args.verbose,
+            )
+        except Exception as error:
+            if args.no_fallback or args.transcriber == "whisper":
+                raise
+            fallback = WhisperTranscriber(args.whisper_model)
+            print(
+                f"{transcriber.name} failed ({error}); "
+                f"falling back to whisper ({fallback.model})...",
+                flush=True,
+            )
+            transcript = fallback.transcribe(
+                normalized,
+                metadata,
+                args.context,
+                args.verbose,
+            )
+        save_json(
+            asr_json,
+            {
+                "engine": transcript.engine,
+                "model": transcript.model,
+                "segments": [
+                    {"start": s.start, "end": s.end, "text": s.text}
+                    for s in transcript.segments
+                ],
+                "raw": transcript.raw,
+            },
+        )
+        draft_md.write_text(render_transcript(transcript), encoding="utf-8")
     else:
-        print(f"[3/3] Reusing {whisper_md}", flush=True)
+        print(f"[3/3] Reusing {draft_md}", flush=True)
 
     print(str(output_dir.resolve()))
     return 0
