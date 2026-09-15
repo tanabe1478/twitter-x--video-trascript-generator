@@ -1,16 +1,18 @@
 # Twitter/X Video Transcript Generator
 
-X（Twitter）の動画をローカルWhisperで文字起こしし、Piのモデルで英語補正と日本語訳を生成する **Pi Package / Extension** です。
+X（Twitter）の動画をローカルASRで文字起こしし、Piのモデルで英語補正と日本語訳を生成する **Pi Package / Extension** です。
 
 ## パイプライン
 
 1. `yt-dlp` で動画の音声を取得
-2. ローカルの MLX Whisper (`whisper-large-v3-turbo`) で英語を文字起こし
+2. ローカルの Parakeet TDT 0.6B v2 (`parakeet-mlx`) で英語を文字起こし
+   - `--transcriber whisper` または `XVT_TRANSCRIBER=whisper` で MLX Whisper (`whisper-large-v3-turbo`) も選択可能
+   - Parakeetが失敗した場合は自動的にWhisperへフォールバックします
 3. `pi -p --model google-vertex/gemini-2.5-pro` で誤認識を補正
    - 失敗時は `google-vertex/gemini-2.5-flash` にフォールバック
 4. `pi -p --model google-vertex/gemini-2.5-flash` で日本語訳
 
-Pythonが担当するのはダウンロード、音声の正規化、Whisperだけです。言語モデルはPython APIから呼ばず、Extensionが独立した `pi -p` プロセスとして起動します。
+Pythonが担当するのはダウンロード、音声の正規化、ローカルASRだけです。言語モデルはPython APIから呼ばず、Extensionが独立した `pi -p` プロセスとして起動します。
 
 ## なぜPackage + Extensionなのか
 
@@ -49,13 +51,13 @@ GitHubからPi Packageとしてインストールします。
 pi install https://github.com/tanabe1478/twitter-x--video-trascript-generator
 ```
 
-Piを起動または `/reload` した後、ローカルWhisper環境を一度だけセットアップします。
+Piを起動または `/reload` した後、ローカル文字起こし環境を一度だけセットアップします。
 
 ```text
 /x-transcribe-setup
 ```
 
-デフォルトでは `~/.cache/twitter-x-video-transcript-generator/venv` にPython仮想環境を作成します。初回のWhisper実行時にはHugging Faceからモデルがダウンロードされます。
+デフォルトでは `~/.cache/twitter-x-video-transcript-generator/venv` にPython仮想環境を作成します。初回の文字起こし実行時にはHugging Faceからモデルがダウンロードされます。
 
 ## 使用方法
 
@@ -100,7 +102,9 @@ export XVT_TRANSLATION_MODEL='google-vertex/gemini-2.5-flash'
 | `XVT_REFINE_MODEL` | `google-vertex/gemini-2.5-pro` | 英語補正モデル |
 | `XVT_REFINE_FALLBACK_MODEL` | `google-vertex/gemini-2.5-flash` | 補正失敗時のモデル |
 | `XVT_TRANSLATION_MODEL` | `google-vertex/gemini-2.5-flash` | 日本語翻訳モデル |
-| `XVT_WHISPER_MODEL` | `mlx-community/whisper-large-v3-turbo` | ローカルWhisperモデル |
+| `XVT_TRANSCRIBER` | `parakeet` | ローカルASRエンジン (`parakeet` / `whisper`) |
+| `XVT_PARAKEET_MODEL` | `mlx-community/parakeet-tdt-0.6b-v2` | ローカルParakeetモデル |
+| `XVT_WHISPER_MODEL` | `mlx-community/whisper-large-v3-turbo` | ローカルWhisperモデル（選択時・フォールバック時） |
 | `XVT_OUTPUT_DIR` | `outputs` | 実行ディレクトリからの出力ルート |
 | `XVT_VENV_DIR` | `~/.cache/twitter-x-video-transcript-generator/venv` | Python仮想環境 |
 | `XVT_PYTHON` | `python3` | セットアップに使うPython |
@@ -134,9 +138,9 @@ pi \
 ```text
 metadata.json             動画のメタデータ
 source.*                  ダウンロードした音声
-audio-16k.wav             Whisper用に正規化した音声
-whisper.json              Whisperの全結果
-transcript-whisper.md     Whisperの下書き
+audio-16k.wav             ASR用に正規化した音声
+asr.json                  ASRの全結果（エンジン名とモデル名を含む）
+transcript-draft.md       ASRの下書き
 refine-prompt.md          誤認識補正に使用したプロンプト
 transcript-en.md          補正後の英語文字起こし
 translate-prompt.md       翻訳に使用したプロンプト
@@ -156,7 +160,7 @@ python3 -m venv .venv
 pi -e .
 ```
 
-ローカルWhisperだけを直接実行する場合:
+ローカル文字起こしだけを直接実行する場合:
 
 ```bash
 .venv/bin/x-video-transcript-local \
@@ -166,8 +170,9 @@ pi -e .
 
 ## 注意点
 
-- 補正・翻訳モデルには音声を渡しません。元音声を扱うのはローカルWhisperだけです。
+- 補正・翻訳モデルには音声を渡しません。元音声を扱うのはローカルASRだけです。
 - 人名、製品名、モデル名はコンテキストとして与えると精度が上がります。
+- `--context` と動画メタデータはWhisperでは `initial_prompt` としても使われます。Parakeetは `initial_prompt` に対応していないため、コンテキストは後段の補正プロンプトでのみ使われます。
 - モデル呼び出しは、指定したプロバイダーの利用枠または料金を消費する場合があります。
 - 動画と音声の利用は、権利者の許諾と各サービスの規約に従ってください。
 
